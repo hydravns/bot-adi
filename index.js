@@ -19,12 +19,14 @@ const client = new Client({
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DEEPSEEK_KEY = process.env.DEEPSEEK_KEY;
 const RP_CHANNEL_ID = process.env.RP_CHANNEL_ID;
-const KV_URL = process.env.KV_URL;
+
+// ⚠️ Ici c'est REDIS_URL maintenant
+const REDIS_URL = process.env.REDIS_URL;
 
 // --------------------------
 // REDIS CLIENT
 // --------------------------
-const redis = new Redis(`redis://${KV_URL}`);
+const redis = new Redis(REDIS_URL);
 
 // Nom de mémoire unique pour ce bot
 const MEMORY_KEY = "memory:adi";
@@ -57,7 +59,7 @@ async function saveMemory(userMsg, botMsg) {
         old +
         `\n[Humain]: ${userMsg}\n[Adolf]: ${botMsg}`;
 
-    // Protéger : on ne garde QUE les 25 000 derniers chars
+    // On ne garde que les 25 000 derniers caractères
     const trimmed = updated.slice(-25000);
 
     await redis.set(MEMORY_KEY, trimmed);
@@ -118,28 +120,34 @@ client.on("messageCreate", async (msg) => {
 
         const txt = content.substring(8).trim();
 
-        const ooc = await axios.post(
-            "https://api.deepseek.com/chat/completions",
-            {
-                model: "deepseek-chat",
-                messages: [
-                    {
-                        role: "system",
-                        content:
-                            "Réponds normalement, sans RP, sans style Adolf. Commence toujours par *hors RP:*."
-                    },
-                    { role: "user", content: txt }
-                ]
-            },
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: "Bearer " + DEEPSEEK_KEY
+        try {
+            const ooc = await axios.post(
+                "https://api.deepseek.com/chat/completions",
+                {
+                    model: "deepseek-chat",
+                    messages: [
+                        {
+                            role: "system",
+                            content:
+                                "Réponds normalement, sans RP, sans style Adolf. Commence toujours par *hors RP:*."
+                        },
+                        { role: "user", content: txt }
+                    ]
+                },
+                {
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: "Bearer " + DEEPSEEK_KEY
+                    }
                 }
-            }
-        );
+            );
 
-        return msg.channel.send(ooc.data.choices[0].message.content);
+            return msg.channel.send(ooc.data.choices[0].message.content);
+
+        } catch (e) {
+            console.error(e);
+            return msg.channel.send("*hors RP:* une erreur s’est produite.");
+        }
     }
 
     // RP NORMAL
@@ -148,11 +156,11 @@ client.on("messageCreate", async (msg) => {
     try {
         const botReply = await askDeepSeek(content);
 
-        // envoyer
         await msg.channel.send(botReply);
 
-        // mémoire
+        // Mémoire
         await saveMemory(content, botReply);
+
     } catch (err) {
         console.error(err);
         msg.channel.send("Une erreur s’est produite…");
