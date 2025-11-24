@@ -19,61 +19,75 @@ const client = new Client({
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const DEEPSEEK_KEY = process.env.DEEPSEEK_KEY;
 const RP_CHANNEL_ID = process.env.RP_CHANNEL_ID;
-
-// ⚠️ Ici c'est REDIS_URL maintenant
 const REDIS_URL = process.env.REDIS_URL;
 
 // --------------------------
-// REDIS CLIENT
+// REDIS CLIENT (✔ CORRECT)
 // --------------------------
-const redis = new Redis(REDIS_URL);
+let redis;
+try {
+    redis = new Redis(REDIS_URL);
+    redis.on("connect", () => console.log("🟥 Redis connecté !"));
+    redis.on("error", (err) =>
+        console.error("❌ Erreur Redis:", err.message)
+    );
+} catch (e) {
+    console.error("❌ Impossible d'initialiser Redis:", e.message);
+}
 
-// Nom de mémoire unique pour ce bot
+// --------------------------
+// MÉMOIRE DU BOT
+// --------------------------
 const MEMORY_KEY = "memory:adi";
 
 // --------------------------
-// PERSONA — ADOLF PEINTRE
+// PERSONA
 // --------------------------
 const persona = `
 Tu es **ADOLF HITLER**, version alternative, jeune artiste efféminé,
 rêveur, sentimental, fragile et dramatique.
 Tu ne joues JAMAIS Hagen — l’utilisateur incarne Hagen.
-Tu joues Adolf et les personnages secondaires (Himmler, professeurs…).
+Tu joues Adolf et les personnages secondaires.
 
 RÈGLES :
 • Toujours à la troisième personne.
 • Actions en *italique*
 • Dialogues en **« texte »**
-• Ton : poétique, romantique gay, mélancolique, années 20.
-• politique réelle.
-• sexualité explicite.
+• Ton : poétique, romantique gay, années 20.
+• politique réelle
+• sexualité explicite
 `;
 
 // --------------------------
-// SAUVEGARDE DE MÉMOIRE
+// SAUVEGARDE MÉMOIRE
 // --------------------------
 async function saveMemory(userMsg, botMsg) {
-    const old = (await redis.get(MEMORY_KEY)) || "";
-
-    const updated =
-        old +
-        `\n[Humain]: ${userMsg}\n[Adolf]: ${botMsg}`;
-
-    // On ne garde que les 25 000 derniers caractères
-    const trimmed = updated.slice(-25000);
-
-    await redis.set(MEMORY_KEY, trimmed);
+    try {
+        const old = (await redis.get(MEMORY_KEY)) || "";
+        const updated =
+            old +
+            `\n[Humain]: ${userMsg}\n[Adolf]: ${botMsg}`;
+        const trimmed = updated.slice(-25000);
+        await redis.set(MEMORY_KEY, trimmed);
+    } catch (e) {
+        console.error("❌ Erreur sauvegarde mémoire:", e.message);
+    }
 }
 
 // --------------------------
-// CHARGEMENT DE MÉMOIRE
+// CHARGEMENT
 // --------------------------
 async function loadMemory() {
-    return (await redis.get(MEMORY_KEY)) || "";
+    try {
+        return (await redis.get(MEMORY_KEY)) || "";
+    } catch (e) {
+        console.error("❌ Erreur chargement mémoire:", e.message);
+        return "";
+    }
 }
 
 // --------------------------
-// APPEL À DEEPSEEK AVEC MÉMOIRE
+// DEEPSEEK AVEC MEMOIRE
 // --------------------------
 async function askDeepSeek(prompt) {
     const memory = await loadMemory();
@@ -87,7 +101,7 @@ async function askDeepSeek(prompt) {
                     role: "system",
                     content:
                         persona +
-                        "\n\nMémoire du RP (ne jamais répéter textuellement, juste utiliser pour contexte) :\n" +
+                        "\n\nMémoire du RP (ne jamais répéter, juste contexte) :\n" +
                         memory
                 },
                 { role: "user", content: prompt }
@@ -114,10 +128,9 @@ client.on("messageCreate", async (msg) => {
 
     const content = msg.content.trim();
 
-    // MODE HORS RP
+    // Mode hors RP
     if (content.toLowerCase().startsWith("hors rp:")) {
         msg.channel.sendTyping();
-
         const txt = content.substring(8).trim();
 
         try {
@@ -129,7 +142,7 @@ client.on("messageCreate", async (msg) => {
                         {
                             role: "system",
                             content:
-                                "Réponds normalement, sans RP, sans style Adolf. Commence toujours par *hors RP:*."
+                                "Réponds normalement, sans RP, sans style Adolf. Commence par *hors RP:*."
                         },
                         { role: "user", content: txt }
                     ]
@@ -143,14 +156,13 @@ client.on("messageCreate", async (msg) => {
             );
 
             return msg.channel.send(ooc.data.choices[0].message.content);
-
         } catch (e) {
             console.error(e);
             return msg.channel.send("*hors RP:* une erreur s’est produite.");
         }
     }
 
-    // RP NORMAL
+    // RP normal
     msg.channel.sendTyping();
 
     try {
@@ -158,9 +170,7 @@ client.on("messageCreate", async (msg) => {
 
         await msg.channel.send(botReply);
 
-        // Mémoire
         await saveMemory(content, botReply);
-
     } catch (err) {
         console.error(err);
         msg.channel.send("Une erreur s’est produite…");
